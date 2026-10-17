@@ -6,7 +6,7 @@ A small Hebrew desktop application for Linux that scans a music folder, analyzes
 
 The GitHub Actions workflow pins the Rhythm engine source to commit `13f7f3ec0ceb01ff34446a09988cf852492ca230`, supplies its analyzer and models to this module, runs engine tests, and creates a self-contained Debian package for x86-64 Linux.
 
-Expected output: `rhythm-sorter_1.0.0-1_amd64.deb`.
+Expected output: `rhythm-sorter_1.0.1-1_amd64.deb`.
 
 ## Use
 

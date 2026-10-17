@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "com.elchanan.rhythm"
-version = "1.0.0"
+version = "1.0.1"
 
 java {
     sourceCompatibility = JavaVersion.VERSION_17
@@ -59,7 +59,7 @@ tasks.register<Exec>("packageDeb") {
         "--vendor", "Rhythm Sorter",
         "--description", "Hebrew desktop tool to sort music by mood",
         "--input", layout.buildDirectory.dir("install/rhythm-sorter/lib").get().asFile.absolutePath,
-        "--main-jar", "sorter-1.0.0.jar",
+        "--main-jar", "sorter-${project.version}.jar",
         "--main-class", "com.elchanan.rhythm.desktop.sorter.FolderSorterKt",
         "--dest", destination.absolutePath,
         "--linux-shortcut"

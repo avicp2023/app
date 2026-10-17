@@ -204,7 +204,10 @@ private class SorterWindow : JFrame("מיון מוזיקה לפי קצב ואו�
                     } else {
                         val moods = Mood.values().toList()
                         val matched = moods.filter { moodModel.matches(it, feature) }
-                        val selected = matched.maxByOrNull { moodModel.strength(it, feature) }
+                        // If a song matches the energetic mood, that category wins.
+                        // Each track is copied to exactly one category folder.
+                        val selected = matched.firstOrNull { it == Mood.ENERGETIC }
+                            ?: matched.maxByOrNull { moodModel.strength(it, feature) }
                             ?: moods.maxByOrNull { moodModel.strength(it, feature) }
                         selected?.label ?: "לא נותח"
                     }
