@@ -84,6 +84,9 @@ private class SorterWindow : JFrame("מיון מוזיקה לפי קצב ואו�
         content.applyComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT)
         contentPane = content
 
+        progress.minimum = 0
+        progress.maximum = 100
+        progress.value = 0
         startButton.addActionListener { startSorting() }
         pack()
         setLocationRelativeTo(null)
@@ -135,7 +138,7 @@ private class SorterWindow : JFrame("מיון מוזיקה לפי קצב ואו�
         }
 
         startButton.isEnabled = false
-        progress.setIndeterminate(true)
+        progress.value = 0
         status.text = "מתחיל לסרוק…"
 
         val worker = object : SwingWorker<SortSummary, String>() {
@@ -227,7 +230,7 @@ private class SorterWindow : JFrame("מיון מוזיקה לפי קצב ואו�
             }
 
             override fun done() {
-                progress.setIndeterminate(false)
+                progress.value = 100
                 startButton.isEnabled = true
                 try {
                     val result = get()
