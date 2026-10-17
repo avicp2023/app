@@ -109,6 +109,15 @@ private class SorterWindow : JFrame("מיון מוזיקה לפי קצב ואו�
     }
 
     private fun startSorting() {
+        if (sourceField.text.isBlank() || targetField.text.isBlank()) {
+            JOptionPane.showMessageDialog(
+                this,
+                "יש לבחור גם תיקיית מקור וגם תיקיית יעד.",
+                "חסרות תיקיות",
+                JOptionPane.WARNING_MESSAGE
+            )
+            return
+        }
         val source = File(sourceField.text.trim()).toPath().toAbsolutePath().normalize()
         val target = File(targetField.text.trim()).toPath().toAbsolutePath().normalize()
         if (!Files.isDirectory(source)) {
@@ -126,7 +135,7 @@ private class SorterWindow : JFrame("מיון מוזיקה לפי קצב ואו�
         }
 
         startButton.isEnabled = false
-        progress.isIndeterminate = true
+        progress.setIndeterminate(true)
         status.text = "מתחיל לסרוק…"
 
         val worker = object : SwingWorker<SortSummary, String>() {
@@ -218,7 +227,7 @@ private class SorterWindow : JFrame("מיון מוזיקה לפי קצב ואו�
             }
 
             override fun done() {
-                progress.isIndeterminate = false
+                progress.setIndeterminate(false)
                 startButton.isEnabled = true
                 try {
                     val result = get()
