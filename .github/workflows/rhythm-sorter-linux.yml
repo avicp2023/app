@@ -45,7 +45,32 @@ jobs:
           cp desktop/src/main/kotlin/com/elchanan/rhythm/desktop/audio/Analyzer.kt sorter/src/main/kotlin/com/elchanan/rhythm/desktop/audio/
           cp desktop/src/main/kotlin/com/elchanan/rhythm/desktop/audio/Models.kt sorter/src/main/kotlin/com/elchanan/rhythm/desktop/audio/
           cp -a desktop/src/main/resources/models/. sorter/src/main/resources/models/
-          grep -q 'include(":sorter")' settings.gradle.kts || printf '\ninclude(":sorter")\n' >> settings.gradle.kts
+          # Use a minimal JVM-only settings file; the full upstream desktop
+          # project is Windows-focused and not needed for the sorter package.
+          cat > settings.gradle.kts <<'EOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "RhythmSorterLinux"
+          include(":engine")
+          include(":sorter")
+          EOF
+          cat > build.gradle.kts <<'EOF'
+          plugins {
+              id("org.jetbrains.kotlin.jvm") version "1.9.24" apply false
+          }
+          EOF
           chmod +x ./gradlew
 
       - name: Run engine tests and build Debian package
