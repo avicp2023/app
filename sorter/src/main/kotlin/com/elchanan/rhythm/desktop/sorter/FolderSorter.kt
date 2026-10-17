@@ -230,7 +230,7 @@ private class SorterWindow : JFrame("מיון מוזיקה לפי קצב ואו�
             }
 
             override fun done() {
-                progress.value = 100
+                this@SorterWindow.progress.value = 100
                 startButton.isEnabled = true
                 try {
                     val result = get()
