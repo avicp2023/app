@@ -1,0 +1,78 @@
+name: Build Rhythm Sorter for Linux
+
+on:
+  push:
+    branches:
+      - rhythm-sorter-linux
+    paths:
+      - "sorter/**"
+      - ".github/workflows/rhythm-sorter-linux.yml"
+      - "NOTICE.md"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-deb:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out this repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Fetch pinned Rhythm engine source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone https://github.com/a0527198150-del/rhythm-windows.git /tmp/rhythm-source
+          git -C /tmp/rhythm-source checkout 13f7f3ec0ceb01ff34446a09988cf852492ca230
+
+      - name: Assemble Linux sorter source tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /tmp/rhythm-source
+          cp -a "$GITHUB_WORKSPACE/sorter" ./sorter
+          mkdir -p sorter/src/main/kotlin/com/elchanan/rhythm/desktop/audio
+          mkdir -p sorter/src/main/resources/models
+          cp desktop/src/main/kotlin/com/elchanan/rhythm/desktop/audio/Analyzer.kt sorter/src/main/kotlin/com/elchanan/rhythm/desktop/audio/
+          cp desktop/src/main/kotlin/com/elchanan/rhythm/desktop/audio/Models.kt sorter/src/main/kotlin/com/elchanan/rhythm/desktop/audio/
+          cp -a desktop/src/main/resources/models/. sorter/src/main/resources/models/
+          grep -q 'include(":sorter")' settings.gradle.kts || printf '\ninclude(":sorter")\n' >> settings.gradle.kts
+          chmod +x ./gradlew
+
+      - name: Run engine tests and build Debian package
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /tmp/rhythm-source
+          ./gradlew --no-daemon --stacktrace :engine:test :sorter:packageDeb
+
+      - name: Upload Debian package as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rhythm-sorter-linux-deb
+          path: /tmp/rhythm-source/sorter/build/distributions/*.deb
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publish downloadable GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          pkg="$(find /tmp/rhythm-source/sorter/build/distributions -maxdepth 1 -name '*.deb' -print -quit)"
+          test -n "$pkg"
+          tag="rhythm-sorter-linux-build-${GITHUB_RUN_NUMBER}"
+          gh release create "$tag" "$pkg" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Rhythm Sorter Linux build ${GITHUB_RUN_NUMBER}" \
+            --notes "Automatically built for Linux x86-64. Upstream Rhythm source pinned to 13f7f3ec0ceb01ff34446a09988cf852492ca230. See NOTICE.md for licensing details."
