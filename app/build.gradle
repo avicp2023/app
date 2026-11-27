@@ -19,8 +19,8 @@ android {
         applicationId 'com.avicp2023.budgetmanager'
         minSdk 26
         targetSdk 35
-        versionCode 2
-        versionName '1.1.0'
+        versionCode 3
+        versionName '1.1.1'
     }
 
     compileOptions {
@@ -33,8 +33,8 @@ android {
             applicationIdSuffix '.debug'
         }
         release {
-            // Signed with the CI debug keystore so the APK is directly installable.
-            // Replace with a private release key before publishing to an app store.
+            // Signed with the persistent CI key to allow compatible updates.
+            // The workflow refuses to publish if its certificate changes.
             signingConfig signingConfigs.debug
             minifyEnabled false
         }

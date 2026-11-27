@@ -38,6 +38,7 @@ jobs:
           gradle-version: '8.7'
           cache-read-only: false
 
+      # Keep this exact cache key stable across every release.
       - name: Restore persistent APK signing key
         uses: actions/cache@v4
         with:
@@ -63,53 +64,66 @@ jobs:
         run: |
           gradle --no-daemon clean :app:assembleRelease
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/nihul-taktziv-v1.1.0.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/nihul-taktziv-v1.1.1.apk
 
-      - name: Verify APK signature and compare with prior releases
+      # Fail closed: never publish an APK signed with a different key than
+      # the latest known-good release. This protects in-place app updates.
+      - name: Verify signature against current release
         shell: bash
         run: |
+          set -euo pipefail
           APK="app/build/outputs/apk/release/app-release.apk"
           SIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
           NEW_CERT=$("$SIGNER" verify --print-certs "$APK" | awk -F': ' '/Signer #1 certificate SHA-256 digest/ {print $2}')
+          test -n "$NEW_CERT"
           echo "New APK signing certificate: $NEW_CERT"
-          for VERSION in v1.0.0 v1.1.0; do
-            OLD_URL="https://github.com/avicp2023/app/releases/download/$VERSION/nihul-taktziv-$VERSION.apk"
-            OLD_APK="/tmp/$VERSION.apk"
-            if curl -fsSL "$OLD_URL" -o "$OLD_APK"; then
-              OLD_CERT=$("$SIGNER" verify --print-certs "$OLD_APK" | awk -F': ' '/Signer #1 certificate SHA-256 digest/ {print $2}')
-              if [ "$OLD_CERT" = "$NEW_CERT" ]; then
-                echo "$VERSION certificate matches: update signature is compatible."
-              else
-                echo "::warning::$VERSION uses a different signing certificate; Android may require uninstalling that version before installing this APK."
-              fi
-            else
-              echo "::warning::Could not download $VERSION APK to compare signing certificates."
+
+          CURRENT_URL="https://github.com/avicp2023/app/releases/download/v1.1.0/nihul-taktziv-v1.1.0.apk"
+          CURRENT_APK="/tmp/current-stable.apk"
+          if ! curl -fsSL "$CURRENT_URL" -o "$CURRENT_APK"; then
+            echo "::error::Cannot download the current stable APK to verify its signing certificate. Refusing to publish."
+            exit 1
+          fi
+          CURRENT_CERT=$("$SIGNER" verify --print-certs "$CURRENT_APK" | awk -F': ' '/Signer #1 certificate SHA-256 digest/ {print $2}')
+          echo "Current stable certificate: $CURRENT_CERT"
+          if [ "$NEW_CERT" != "$CURRENT_CERT" ]; then
+            echo "::error::Signing certificate mismatch with v1.1.0. Refusing to publish an APK that cannot update the current release."
+            exit 1
+          fi
+          echo "Signing certificate matches v1.1.0. Safe to publish."
+
+          # The original 1.0.0 release was signed before a persistent key
+          # existed. Keep a visible warning for users upgrading from it.
+          LEGACY_URL="https://github.com/avicp2023/app/releases/download/v1.0.0/nihul-taktziv-v1.0.0.apk"
+          if curl -fsSL "$LEGACY_URL" -o /tmp/legacy-v1.0.0.apk; then
+            LEGACY_CERT=$("$SIGNER" verify --print-certs /tmp/legacy-v1.0.0.apk | awk -F': ' '/Signer #1 certificate SHA-256 digest/ {print $2}')
+            if [ "$LEGACY_CERT" != "$NEW_CERT" ]; then
+              echo "::warning::v1.0.0 was signed with a different certificate. Users upgrading from that original build must export a JSON backup, uninstall it, and install the current APK."
             fi
-          done
+          fi
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.1.0
+          tag_name: v1.1.1
           target_commitish: budget-manager
-          name: ניהול תקציב v1.1.0
+          name: ניהול תקציב v1.1.1
           body: |
-            גרסה 1.1.0 של אפליקציית ניהול תקציב לאנדרואיד 8 ומעלה.
-            
+            גרסה 1.1.1 של אפליקציית ניהול תקציב לאנדרואיד 8 ומעלה.
+
+            - תיקון תהליך החתימה כדי לשמור על תאימות לעדכונים עתידיים
+            - בדיקת התאמת חתימה מול הגרסה הקודמת לפני כל פרסום
+            - אם מפתח החתימה אינו זמין או שהחתימה השתנתה, הפרסום נעצר
+
             - ממשק משופר עם כרטיסים מעוגלים וניווט מודגש
             - כל תנועה יכולה להפוך להוראה מחזורית כבר בזמן ההזנה
             - קטגוריות השקעות ורווחי השקעות
             - נעילת אפליקציה באמצעות PIN בן 4 עד 8 ספרות
-            - PIN נשמר כגיבוב PBKDF2 עם salt אקראי ונעילה בחזרה לאפליקציה
-
             - ממשק בעברית ובכיווניות RTL
-            - ניהול הכנסות והוצאות
-            - קטגוריות עם אייקונים
-            - תקציבים חודשיים ושנתיים
-            - הוראות מחזוריות
+            - ניהול הכנסות והוצאות, תקציבים וסטטיסטיקות
             - גיבוי מלא וייצוא CSV
             - שמירת נתונים מקומית ללא צורך באינטרנט
-          files: dist/nihul-taktziv-v1.1.0.apk
+          files: dist/nihul-taktziv-v1.1.1.apk
           make_latest: true
           fail_on_unmatched_files: true
           token: ${{ secrets.GITHUB_TOKEN }}
