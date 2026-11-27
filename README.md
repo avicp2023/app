@@ -1,8 +1,25 @@
-# Rhythm Sorter Linux
+# ניהול תקציב
 
-A Linux desktop utility that analyzes local audio files using the Rhythm engine and copies them into mood-based folders.
+אפליקציית Android לניהול הכנסות, הוצאות ותקציב אישי, בעברית ובכיווניות RTL.
 
-The project will build a self-contained Debian package (`.deb`) for 64-bit Linux using GitHub Actions.
+## דרישות
+- Android 8.0 (API 26) ומעלה
+- כל הנתונים נשמרים מקומית ב-SQLite
+- האפליקציה אינה מבקשת הרשאת אינטרנט ואינה תלויה בשרת
 
-## Status
-Source and automated build workflow are being added to the `rhythm-sorter-linux` branch. The final release package will be linked here after a successful CI build.
+## יכולות
+- מסך ראשי עם יתרה, הכנסות והוצאות
+- ניהול תנועות, חיפוש, עריכה ומחיקה עם אישור
+- קטגוריות עם אייקוני Emoji ותקציבים
+- תקציב חודשי ושנתי
+- סטטיסטיקה לפי תקופה וקטגוריה
+- הוראות מחזוריות להכנסות ולהוצאות
+- גיבוי מלא JSON, שחזור וייצוא CSV
+
+## בנייה
+הרץ: gradle --no-daemon :app:assembleRelease
+
+ה-APK נמצא בתיקייה app/build/outputs/apk/release/.
+
+## הערת חתימה
+בניית CI משתמשת בחתימת debug כדי להפיק APK שניתן להתקנה ולבדיקה. לפני הפצה בחנות יש להגדיר מפתח חתימה פרטי וקבוע.

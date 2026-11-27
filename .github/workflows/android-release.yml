@@ -1,0 +1,63 @@
+name: Build and publish Android APK
+
+on:
+  push:
+    branches:
+      - budget-manager
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          ref: budget-manager
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Build signed APK
+        run: |
+          gradle --no-daemon clean :app:assembleRelease
+          mkdir -p dist
+          cp app/build/outputs/apk/release/app-release.apk dist/nihul-taktziv-v1.0.0.apk
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.0
+          target_commitish: budget-manager
+          name: ניהול תקציב v1.0.0
+          body: |
+            גרסה ראשונה של אפליקציית ניהול תקציב לאנדרואיד 8 ומעלה.
+
+            - ממשק בעברית ובכיווניות RTL
+            - ניהול הכנסות והוצאות
+            - קטגוריות עם אייקונים
+            - תקציבים חודשיים ושנתיים
+            - הוראות מחזוריות
+            - גיבוי מלא וייצוא CSV
+            - שמירת נתונים מקומית ללא צורך באינטרנט
+          files: dist/nihul-taktziv-v1.0.0.apk
+          make_latest: true
+          fail_on_unmatched_files: true
+          token: ${{ secrets.GITHUB_TOKEN }}
