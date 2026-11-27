@@ -15,7 +15,7 @@ import java.util.List;
 
 public class BudgetDb extends SQLiteOpenHelper {
     private static final String DB_NAME = "budget_manager.db";
-    private static final int DB_VERSION = 1;
+    private static final int DB_VERSION = 2;
 
     public BudgetDb(Context context) { super(context, DB_NAME, null, DB_VERSION); }
 
@@ -35,6 +35,7 @@ public class BudgetDb extends SQLiteOpenHelper {
         addSeed(db, "משכורת", "💼", "INCOME");
         addSeed(db, "הכנסה נוספת", "💰", "INCOME");
         addSeed(db, "מתנות", "🎁", "INCOME");
+        addSeed(db, "רווחי השקעות", "💹", "INCOME");
         addSeed(db, "מזון וקניות", "🛒", "EXPENSE");
         addSeed(db, "דיור", "🏠", "EXPENSE");
         addSeed(db, "חשבונות", "💡", "EXPENSE");
@@ -43,6 +44,7 @@ public class BudgetDb extends SQLiteOpenHelper {
         addSeed(db, "ביגוד", "👕", "EXPENSE");
         addSeed(db, "בילויים", "🎬", "EXPENSE");
         addSeed(db, "חינוך", "📚", "EXPENSE");
+        addSeed(db, "השקעות", "📈", "EXPENSE");
         addSeed(db, "אחר", "📦", "EXPENSE");
     }
 
@@ -57,7 +59,18 @@ public class BudgetDb extends SQLiteOpenHelper {
         db.insertWithOnConflict("settings", null, v, SQLiteDatabase.CONFLICT_REPLACE);
     }
 
-    @Override public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) { }
+    @Override public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
+        if (oldVersion < 2) {
+            ensureSeed(db, "השקעות", "📈", "EXPENSE");
+            ensureSeed(db, "רווחי השקעות", "💹", "INCOME");
+        }
+    }
+
+    private void ensureSeed(SQLiteDatabase db, String name, String icon, String type) {
+        try (Cursor c = db.rawQuery("SELECT COUNT(*) FROM categories WHERE name=? AND type=?", new String[]{name, type})) {
+            if (c.moveToFirst() && c.getInt(0) == 0) addSeed(db, name, icon, type);
+        }
+    }
 
     public String getSetting(String key, String fallback) {
         try (Cursor c = getReadableDatabase().rawQuery("SELECT value FROM settings WHERE key=?", new String[]{key})) {
@@ -90,6 +103,73 @@ public class BudgetDb extends SQLiteOpenHelper {
 
     public long addTransaction(String type, long amount, Category category, String note, String date, String payment) {
         return addTransaction(type, amount, category.id, category.name, category.icon, note, date, payment, 0, null);
+    }
+
+    public long addTransactionWithRecurring(String type, long amount, Category category, String note,
+                                            String date, String payment, String frequency, String endDate) {
+        SQLiteDatabase database = getWritableDatabase();
+        database.beginTransaction();
+        try {
+            LocalDate firstDate = LocalDate.parse(date);
+            LocalDate nextDue = nextDate(firstDate, frequency);
+            ContentValues rule = new ContentValues();
+            rule.put("type", type);
+            rule.put("amount", amount);
+            rule.put("category_id", category.id);
+            rule.put("category_name", category.name);
+            rule.put("category_icon", category.icon);
+            rule.put("note", note);
+            rule.put("frequency", frequency);
+            rule.put("next_due", nextDue.toString());
+            rule.put("end_date", endDate);
+            rule.put("active", 1);
+            long ruleId = database.insertOrThrow("recurring", null, rule);
+            long transactionId = addTransaction(type, amount, category.id, category.name, category.icon,
+                    note, date, payment, ruleId, date);
+            if (transactionId <= 0) throw new IllegalStateException("לא ניתן לשמור את התנועה");
+            database.setTransactionSuccessful();
+            return transactionId;
+        } finally {
+            database.endTransaction();
+        }
+    }
+
+    public long updateTransactionWithRecurring(long id, String type, long amount, Category category,
+                                               String note, String date, String payment,
+                                               String frequency, String endDate) {
+        SQLiteDatabase database = getWritableDatabase();
+        database.beginTransaction();
+        try {
+            LocalDate nextDue = nextDate(LocalDate.parse(date), frequency);
+            ContentValues rule = new ContentValues();
+            rule.put("type", type);
+            rule.put("amount", amount);
+            rule.put("category_id", category.id);
+            rule.put("category_name", category.name);
+            rule.put("category_icon", category.icon);
+            rule.put("note", note);
+            rule.put("frequency", frequency);
+            rule.put("next_due", nextDue.toString());
+            rule.put("end_date", endDate);
+            rule.put("active", 1);
+            long ruleId = database.insertOrThrow("recurring", null, rule);
+            ContentValues transaction = new ContentValues();
+            transaction.put("type", type);
+            transaction.put("amount", amount);
+            transaction.put("category_id", category.id);
+            transaction.put("category_name", category.name);
+            transaction.put("category_icon", category.icon);
+            transaction.put("note", note);
+            transaction.put("date", date);
+            transaction.put("payment", payment);
+            transaction.put("recurring_id", ruleId);
+            transaction.put("recurring_due", date);
+            database.update("transactions", transaction, "_id=?", new String[]{String.valueOf(id)});
+            database.setTransactionSuccessful();
+            return ruleId;
+        } finally {
+            database.endTransaction();
+        }
     }
 
     private long addTransaction(String type, long amount, long categoryId, String categoryName, String categoryIcon, String note, String date, String payment, long recurringId, String recurringDue) {
@@ -131,7 +211,7 @@ public class BudgetDb extends SQLiteOpenHelper {
     }
 
     private TransactionRecord readTransaction(Cursor c) {
-        return new TransactionRecord(c.getLong(c.getColumnIndexOrThrow("_id")), c.getString(c.getColumnIndexOrThrow("type")), c.getLong(c.getColumnIndexOrThrow("amount")), c.getLong(c.getColumnIndexOrThrow("category_id")), c.getString(c.getColumnIndexOrThrow("category_name")), c.getString(c.getColumnIndexOrThrow("category_icon")), c.getString(c.getColumnIndexOrThrow("note")), c.getString(c.getColumnIndexOrThrow("date")), c.getString(c.getColumnIndexOrThrow("payment")));
+        return new TransactionRecord(c.getLong(c.getColumnIndexOrThrow("_id")), c.getString(c.getColumnIndexOrThrow("type")), c.getLong(c.getColumnIndexOrThrow("amount")), c.getLong(c.getColumnIndexOrThrow("category_id")), c.getString(c.getColumnIndexOrThrow("category_name")), c.getString(c.getColumnIndexOrThrow("category_icon")), c.getString(c.getColumnIndexOrThrow("note")), c.getString(c.getColumnIndexOrThrow("date")), c.getString(c.getColumnIndexOrThrow("payment")), c.getLong(c.getColumnIndexOrThrow("recurring_id")));
     }
 
     public long sum(String type, String start, String end) {
@@ -278,8 +358,8 @@ public class BudgetDb extends SQLiteOpenHelper {
         @Override public String toString(){return icon+" "+name;}
     }
     public static class TransactionRecord {
-        public long id, amount, categoryId; public String type, categoryName, categoryIcon, note, date, payment;
-        public TransactionRecord(long id,String type,long amount,long categoryId,String name,String icon,String note,String date,String payment){this.id=id;this.type=type;this.amount=amount;this.categoryId=categoryId;this.categoryName=name;this.categoryIcon=icon;this.note=note;this.date=date;this.payment=payment;}
+        public long id, amount, categoryId, recurringId; public String type, categoryName, categoryIcon, note, date, payment;
+        public TransactionRecord(long id,String type,long amount,long categoryId,String name,String icon,String note,String date,String payment,long recurringId){this.id=id;this.type=type;this.amount=amount;this.categoryId=categoryId;this.categoryName=name;this.categoryIcon=icon;this.note=note;this.date=date;this.payment=payment;this.recurringId=recurringId;}
     }
     public static class CategoryTotal { public String name,icon; public long total; public CategoryTotal(String n,String i,long t){name=n;icon=i;total=t;} }
     public static class RecurringRule {

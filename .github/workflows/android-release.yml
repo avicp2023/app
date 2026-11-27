@@ -48,16 +48,22 @@ jobs:
         run: |
           gradle --no-daemon clean :app:assembleRelease
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/nihul-taktziv-v1.0.0.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/nihul-taktziv-v1.1.0.apk
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.0
+          tag_name: v1.1.0
           target_commitish: budget-manager
-          name: ניהול תקציב v1.0.0
+          name: ניהול תקציב v1.1.0
           body: |
-            גרסה ראשונה של אפליקציית ניהול תקציב לאנדרואיד 8 ומעלה.
+            גרסה 1.1.0 של אפליקציית ניהול תקציב לאנדרואיד 8 ומעלה.
+            
+            - ממשק משופר עם כרטיסים מעוגלים וניווט מודגש
+            - כל תנועה יכולה להפוך להוראה מחזורית כבר בזמן ההזנה
+            - קטגוריות השקעות ורווחי השקעות
+            - נעילת אפליקציה באמצעות PIN בן 4 עד 8 ספרות
+            - PIN נשמר כגיבוב PBKDF2 עם salt אקראי ונעילה בחזרה לאפליקציה
 
             - ממשק בעברית ובכיווניות RTL
             - ניהול הכנסות והוצאות
@@ -66,7 +72,7 @@ jobs:
             - הוראות מחזוריות
             - גיבוי מלא וייצוא CSV
             - שמירת נתונים מקומית ללא צורך באינטרנט
-          files: dist/nihul-taktziv-v1.0.0.apk
+          files: dist/nihul-taktziv-v1.1.0.apk
           make_latest: true
           fail_on_unmatched_files: true
           token: ${{ secrets.GITHUB_TOKEN }}

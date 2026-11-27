@@ -26,10 +26,14 @@ import java.util.Locale;
 
 public class MainActivity extends Activity {
     private BudgetDb db;
+    private PinSecurity pinSecurity;
     private LinearLayout root, pageHost, bottomBar;
     private int currentTab = 0;
+    private boolean activityReady = false;
+    private boolean lockOnResume = false;
+    private boolean locked = false;
     private static final int REQ_BACKUP = 7101, REQ_CSV = 7102, REQ_RESTORE = 7103;
-    private final String[] emojiOptions = {"🛒","🏠","💡","🚗","🩺","👕","🎬","📚","💼","💰","🎁","📦","🐾","✈️","⚽","📱","🧾","🎓","🏦","🛠️"};
+    private final String[] emojiOptions = {"🛒","🏠","💡","🚗","🩺","👕","🎬","📚","💼","💰","🎁","📈","💹","📦","🐾","✈️","⚽","📱","🧾","🎓","🏦","🛠️"};
     private final String[] paymentOptions = {"מזומן","כרטיס אשראי","העברה בנקאית","הוראת קבע","אחר"};
     private final String[] frequencyLabels = {"חודשי","שבועי","אחת לחודשיים","שנתי","יומי"};
     private final String[] frequencyCodes = {"MONTHLY","WEEKLY","BIMONTHLY","YEARLY","DAILY"};
@@ -40,9 +44,174 @@ public class MainActivity extends Activity {
         getWindow().setNavigationBarColor(Color.rgb(255,255,255));
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
         db = new BudgetDb(this);
+        pinSecurity = new PinSecurity(this);
         db.processRecurring();
+        activityReady = true;
+        if (pinSecurity.isEnabled()) {
+            showPinLockScreen();
+        } else {
+            openMainApp();
+        }
+    }
+
+    @Override protected void onPause() {
+        if (activityReady && pinSecurity != null && pinSecurity.isEnabled() && !locked) {
+            lockOnResume = true;
+        }
+        super.onPause();
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        if (activityReady && lockOnResume && pinSecurity != null && pinSecurity.isEnabled()) {
+            lockOnResume = false;
+            showPinLockScreen();
+        }
+    }
+
+    @Override public void onBackPressed() {
+        if (locked) return;
+        super.onBackPressed();
+    }
+
+    private void openMainApp() {
+        locked = false;
+        if (pinSecurity != null && pinSecurity.isEnabled()) {
+            getWindow().setFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE,
+                    android.view.WindowManager.LayoutParams.FLAG_SECURE);
+        } else {
+            getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE);
+        }
         buildShell();
         render();
+    }
+
+    private void showPinLockScreen() {
+        locked = true;
+        getWindow().setFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE,
+                android.view.WindowManager.LayoutParams.FLAG_SECURE);
+        getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+
+        LinearLayout screen = new LinearLayout(this);
+        screen.setOrientation(LinearLayout.VERTICAL);
+        screen.setGravity(Gravity.CENTER);
+        screen.setPadding(dp(24), dp(24), dp(24), dp(24));
+        screen.setBackgroundColor(Color.rgb(241, 246, 248));
+
+        LinearLayout panel = card();
+        panel.setPadding(dp(24), dp(28), dp(24), dp(24));
+        panel.setGravity(Gravity.CENTER_HORIZONTAL);
+        TextView logo = text("₪", 30, Color.WHITE, true);
+        logo.setGravity(Gravity.CENTER);
+        logo.setBackground(rounded(Color.rgb(25,119,121), 20));
+        panel.addView(logo, params(dp(68), dp(68), 0, 0, 0, 16));
+        TextView title = text("האפליקציה נעולה", 21, Color.rgb(25,50,62), true);
+        title.setGravity(Gravity.CENTER);
+        panel.addView(title, params(-1, -2, 0, 0, 0, 6));
+        TextView subtitle = text("הזן את קוד ה-PIN כדי להמשיך", 13, Color.rgb(105,123,132), false);
+        subtitle.setGravity(Gravity.CENTER);
+        panel.addView(subtitle, params(-1, -2, 0, 0, 0, 18));
+
+        EditText pinField = edit("קוד PIN", InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
+        pinField.setGravity(Gravity.CENTER);
+        pinField.setTextDirection(View.TEXT_DIRECTION_LTR);
+        pinField.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
+        panel.addView(pinField, params(-1, dp(52), 0, 0, 0, 12));
+        TextView unlock = (TextView) actionButton("פתיחת האפליקציה", Color.rgb(25,119,121), () -> unlockWithPin(pinField));
+        panel.addView(unlock, params(-1, dp(48), 0, 0, 0, 0));
+        pinField.setOnEditorActionListener((v, actionId, event) -> {
+            unlockWithPin(pinField);
+            return true;
+        });
+        screen.addView(panel, new LinearLayout.LayoutParams(-1, -2));
+        setContentView(screen);
+    }
+
+    private void unlockWithPin(EditText field) {
+        String entered = field.getText().toString();
+        if (pinSecurity.verifyPin(entered)) {
+            openMainApp();
+        } else {
+            field.setError("קוד PIN שגוי");
+            field.setText("");
+            field.requestFocus();
+        }
+    }
+
+    private void showPinSetupDialog() {
+        boolean alreadyEnabled = pinSecurity.isEnabled();
+        LinearLayout form = formBox();
+        EditText current = null;
+        if (alreadyEnabled) {
+            current = edit("קוד PIN נוכחי", InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
+            current.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
+            form.addView(fieldLabel("אימות הקוד הנוכחי"));
+            form.addView(current);
+        }
+        EditText newPin = edit("קוד חדש – 4 עד 8 ספרות", InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
+        EditText confirm = edit("הקלד שוב את הקוד החדש", InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
+        newPin.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
+        confirm.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
+        form.addView(fieldLabel("קוד חדש"));
+        form.addView(newPin);
+        form.addView(fieldLabel("אימות הקוד החדש"));
+        form.addView(confirm);
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle(alreadyEnabled ? "שינוי קוד PIN" : "הפעלת נעילה עם PIN")
+                .setView(form).setNegativeButton("ביטול", null)
+                .setPositiveButton("שמירה", null).create();
+        EditText currentField = current;
+        dialog.setOnShowListener(v -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(w -> {
+            if (alreadyEnabled && !pinSecurity.verifyPin(currentField.getText().toString())) {
+                currentField.setError("קוד PIN נוכחי שגוי");
+                return;
+            }
+            String one = newPin.getText().toString();
+            String two = confirm.getText().toString();
+            if (!one.matches("[0-9]{4,8}")) {
+                newPin.setError("הקוד חייב להכיל 4 עד 8 ספרות");
+                return;
+            }
+            if (!one.equals(two)) {
+                confirm.setError("הקודים אינם תואמים");
+                return;
+            }
+            try {
+                pinSecurity.savePin(one);
+                getWindow().setFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE,
+                        android.view.WindowManager.LayoutParams.FLAG_SECURE);
+                dialog.dismiss();
+                toast("נעילת PIN הופעלה");
+                render();
+            } catch (Exception e) {
+                new AlertDialog.Builder(this).setMessage(e.getMessage()).setPositiveButton("אישור", null).show();
+            }
+        }));
+        dialog.show();
+    }
+
+    private void showDisablePinDialog() {
+        EditText current = edit("קוד PIN נוכחי", InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
+        current.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
+        LinearLayout form = formBox();
+        form.addView(fieldLabel("לאימות זהותך, הזן את הקוד הנוכחי"));
+        form.addView(current);
+        AlertDialog dialog = new AlertDialog.Builder(this).setTitle("ביטול נעילת PIN")
+                .setView(form).setNegativeButton("ביטול", null).setPositiveButton("ביטול נעילה", null).create();
+        dialog.setOnShowListener(v -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(w -> {
+            if (!pinSecurity.verifyPin(current.getText().toString())) {
+                current.setError("קוד PIN שגוי");
+                return;
+            }
+            pinSecurity.clearPin();
+            lockOnResume = false;
+            getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE);
+            dialog.dismiss();
+            toast("נעילת PIN בוטלה");
+            render();
+        }));
+        dialog.show();
     }
 
     private void buildShell() {
@@ -55,7 +224,9 @@ public class MainActivity extends Activity {
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.CENTER_VERTICAL);
         header.setPadding(dp(18), dp(14), dp(18), dp(12));
-        header.setBackgroundColor(Color.rgb(15,48,63));
+        GradientDrawable headerBackground = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
+                new int[]{Color.rgb(12,43,57), Color.rgb(25,92,99)});
+        header.setBackground(headerBackground);
         TextView mark = text("₪", 25, Color.WHITE, true);
         mark.setGravity(Gravity.CENTER);
         GradientDrawable badge = rounded(Color.rgb(29,115,119), 14);
@@ -80,6 +251,7 @@ public class MainActivity extends Activity {
         bottomBar.setOrientation(LinearLayout.HORIZONTAL);
         bottomBar.setPadding(dp(5),dp(5),dp(5),dp(7));
         bottomBar.setBackgroundColor(Color.WHITE);
+        bottomBar.setElevation(dp(8));
         String[] labels = {"ראשי","תנועות","סטטיסטיקה","הגדרות"};
         String[] icons = {"⌂","⇄","▥","⚙"};
         for (int i=0;i<labels.length;i++) {
@@ -87,7 +259,7 @@ public class MainActivity extends Activity {
             LinearLayout item = new LinearLayout(this);
             item.setOrientation(LinearLayout.VERTICAL);
             item.setGravity(Gravity.CENTER);
-            item.setPadding(0,dp(5),0,dp(3));
+            item.setPadding(dp(3),dp(7),dp(3),dp(5));
             TextView icon = text(icons[i],20,Color.rgb(74,96,108),true);
             TextView label = text(labels[i],10,Color.rgb(90,106,116),false);
             icon.setGravity(Gravity.CENTER); label.setGravity(Gravity.CENTER);
@@ -112,6 +284,7 @@ public class MainActivity extends Activity {
         for(int i=0;i<bottomBar.getChildCount();i++){
             LinearLayout item=(LinearLayout)bottomBar.getChildAt(i);
             int color=i==currentTab?Color.rgb(25,119,121):Color.rgb(111,126,135);
+            item.setBackground(i==currentTab ? rounded(Color.rgb(232,245,243),12) : null);
             ((TextView)item.getChildAt(0)).setTextColor(color);
             ((TextView)item.getChildAt(1)).setTextColor(color);
         }
@@ -122,7 +295,8 @@ public class MainActivity extends Activity {
         scroll.setFillViewport(true);
         LinearLayout body = new LinearLayout(this);
         body.setOrientation(LinearLayout.VERTICAL);
-        body.setPadding(dp(15),dp(15),dp(15),dp(24));
+        body.setPadding(dp(18),dp(18),dp(18),dp(28));
+        body.setClipToPadding(false);
         body.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
         scroll.addView(body);
         pageHost.addView(scroll,new LinearLayout.LayoutParams(-1,-1));
@@ -227,6 +401,7 @@ public class MainActivity extends Activity {
         details.addView(text(t.categoryName,14,Color.rgb(40,61,72),true));
         String description=(t.note==null||t.note.trim().isEmpty())?t.date:t.note+"  ·  "+t.date;
         details.addView(text(description,11,Color.rgb(112,126,134),false));
+        if (t.recurringId > 0) details.addView(text("↻ תנועה מחזורית",10,Color.rgb(25,119,121),true));
         line.addView(details,new LinearLayout.LayoutParams(0,-2,1));
         boolean inc="INCOME".equals(t.type);
         line.addView(text((inc?"+":"−")+money(t.amount),15,inc?Color.rgb(27,132,104):Color.rgb(190,78,70),true));
@@ -249,10 +424,12 @@ public class MainActivity extends Activity {
         if(cats.isEmpty()){toast("אין קטגוריות לסוג זה. הוסף קטגוריה בהגדרות.");return;}
         LinearLayout form=formBox();
         EditText amount=edit("סכום בשקלים",InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
-        amount.setTextDirection(View.TEXT_DIRECTION_LTR);amount.setGravity(Gravity.CENTER_VERTICAL|Gravity.LEFT);
+        amount.setTextDirection(View.TEXT_DIRECTION_LTR);
+        amount.setGravity(Gravity.CENTER_VERTICAL|Gravity.LEFT);
         EditText note=edit("תיאור / הערות (לא חובה)",InputType.TYPE_CLASS_TEXT);
         EditText date=edit("תאריך yyyy-MM-dd",InputType.TYPE_CLASS_TEXT);
-        date.setText(LocalDate.now().toString());date.setTextDirection(View.TEXT_DIRECTION_LTR);
+        date.setText(LocalDate.now().toString());
+        date.setTextDirection(View.TEXT_DIRECTION_LTR);
         Spinner cat=spinner(cats.toArray(new BudgetDb.Category[0]));
         Spinner payment=spinner(paymentOptions);
         form.addView(fieldLabel("סכום"));form.addView(amount);
@@ -260,15 +437,54 @@ public class MainActivity extends Activity {
         form.addView(fieldLabel("תיאור"));form.addView(note);
         form.addView(fieldLabel("תאריך"));form.addView(date);
         form.addView(fieldLabel("אמצעי תשלום"));form.addView(payment);
+
+        CheckBox recurringCheck = null;
+        Spinner repeatFrequency = null;
+        EditText repeatEnd = null;
+        if (existing == null || existing.recurringId == 0) {
+            recurringCheck = new CheckBox(this);
+            recurringCheck.setText("הפוך את התנועה הזו למחזורית");
+            recurringCheck.setTextSize(13);
+            recurringCheck.setTextColor(Color.rgb(39,67,78));
+            recurringCheck.setButtonTintList(android.content.res.ColorStateList.valueOf(Color.rgb(25,119,121)));
+            form.addView(recurringCheck,params(-1,-2,0,dp(8),0,0));
+
+            LinearLayout recurrenceOptions = new LinearLayout(this);
+            recurrenceOptions.setOrientation(LinearLayout.VERTICAL);
+            recurrenceOptions.setVisibility(View.GONE);
+            recurrenceOptions.setPadding(dp(8),dp(4),dp(8),dp(4));
+            repeatFrequency = spinner(frequencyLabels);
+            repeatEnd = edit("תאריך סיום yyyy-MM-dd (לא חובה)",InputType.TYPE_CLASS_TEXT);
+            repeatEnd.setTextDirection(View.TEXT_DIRECTION_LTR);
+            recurrenceOptions.addView(fieldLabel("תדירות"));
+            recurrenceOptions.addView(repeatFrequency);
+            recurrenceOptions.addView(fieldLabel("תאריך סיום"));
+            recurrenceOptions.addView(repeatEnd);
+            form.addView(recurrenceOptions);
+            CheckBox toggle = recurringCheck;
+            toggle.setOnCheckedChangeListener((button, checked) ->
+                    recurrenceOptions.setVisibility(checked ? View.VISIBLE : View.GONE));
+        } else {
+            TextView recurringNotice=text("↻ תנועה זו נוצרה מהוראה מחזורית. אפשר לנהל את ההוראה במסך ההגדרות.",11,Color.rgb(25,119,121),true);
+            form.addView(recurringNotice,params(-1,-2,0,dp(8),0,0));
+        }
+
         if(existing!=null){
             amount.setText(String.format(Locale.US,"%.2f",existing.amount/100.0));
-            note.setText(existing.note==null?"":existing.note);date.setText(existing.date);
+            note.setText(existing.note==null?"":existing.note);
+            date.setText(existing.date);
             for(int i=0;i<cats.size();i++)if(cats.get(i).id==existing.categoryId){cat.setSelection(i);break;}
             for(int i=0;i<paymentOptions.length;i++)if(paymentOptions[i].equals(existing.payment)){payment.setSelection(i);break;}
         }
-        ScrollView sc=new ScrollView(this);sc.addView(form);
-        AlertDialog dialog=new AlertDialog.Builder(this).setTitle(existing==null?("הוספת "+("INCOME".equals(type)?"הכנסה":"הוצאה")):"עריכת תנועה")
-            .setView(sc).setNegativeButton("ביטול",null).setPositiveButton(existing==null?"שמירה":"עדכון",null).create();
+        ScrollView sc=new ScrollView(this);
+        sc.addView(form);
+        AlertDialog dialog=new AlertDialog.Builder(this)
+            .setTitle(existing==null?("הוספת "+("INCOME".equals(type)?"הכנסה":"הוצאה")):"עריכת תנועה")
+            .setView(sc).setNegativeButton("ביטול",null)
+            .setPositiveButton(existing==null?"שמירה":"עדכון",null).create();
+        CheckBox recurringToggle=recurringCheck;
+        Spinner frequencyChoice=repeatFrequency;
+        EditText endChoice=repeatEnd;
         dialog.setOnShowListener(v->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(w->{
             long value=parseMoney(amount.getText().toString());
             String dt=date.getText().toString().trim();
@@ -276,11 +492,40 @@ public class MainActivity extends Activity {
             if(!validDate(dt)){date.setError("תאריך חייב להיות yyyy-MM-dd");return;}
             BudgetDb.Category selected=(BudgetDb.Category)cat.getSelectedItem();
             if(selected==null){toast("בחר קטגוריה");return;}
-            if(existing==null)db.addTransaction(type,value,selected,note.getText().toString().trim(),dt,String.valueOf(payment.getSelectedItem()));
-            else db.updateTransaction(existing.id,type,value,selected,note.getText().toString().trim(),dt,String.valueOf(payment.getSelectedItem()));
-            dialog.dismiss();toast(existing==null?"התנועה נשמרה":"התנועה עודכנה");render();
+            String description=note.getText().toString().trim();
+            String pay=String.valueOf(payment.getSelectedItem());
+            boolean makeRecurring=recurringToggle!=null && recurringToggle.isChecked();
+            if(makeRecurring){
+                String frequency=frequencyCodes[frequencyChoice.getSelectedItemPosition()];
+                LocalDate next=nextOccurrence(LocalDate.parse(dt),frequency);
+                String endDate=endChoice.getText().toString().trim();
+                if(!endDate.isEmpty()&&!validDate(endDate)){endChoice.setError("תאריך סיום לא תקין");return;}
+                if(!endDate.isEmpty()&&LocalDate.parse(endDate).isBefore(next)){
+                    endChoice.setError("תאריך הסיום חייב להיות אחרי מועד החזרה הראשון");return;
+                }
+                if(existing==null)db.addTransactionWithRecurring(type,value,selected,description,dt,pay,frequency,endDate);
+                else db.updateTransactionWithRecurring(existing.id,type,value,selected,description,dt,pay,frequency,endDate);
+                db.processRecurring();
+            } else if(existing==null) {
+                db.addTransaction(type,value,selected,description,dt,pay);
+            } else {
+                db.updateTransaction(existing.id,type,value,selected,description,dt,pay);
+            }
+            dialog.dismiss();
+            toast(makeRecurring?"התנועה נשמרה כהוראה מחזורית":(existing==null?"התנועה נשמרה":"התנועה עודכנה"));
+            render();
         }));
         dialog.show();
+    }
+
+    private LocalDate nextOccurrence(LocalDate date,String frequency) {
+        switch(frequency){
+            case "DAILY": return date.plusDays(1);
+            case "WEEKLY": return date.plusWeeks(1);
+            case "BIMONTHLY": return date.plusMonths(2);
+            case "YEARLY": return date.plusYears(1);
+            default: return date.plusMonths(1);
+        }
     }
 
     private void renderStatistics() {
@@ -354,6 +599,23 @@ public class MainActivity extends Activity {
         }),params(-1,dp(46),0,dp(10),0,0));
         b.addView(moneySettings,params(-1,-2,0,0,0,12));
 
+        LinearLayout security = card();
+        security.addView(text("אבטחה ונעילה",16,Color.rgb(44,65,76),true));
+        security.addView(text(pinSecurity.isEnabled()
+                ? "האפליקציה מוגנת בקוד PIN. היא תינעל כשיוצאים ממנה וחוזרים אליה."
+                : "אפשר להגן על המידע הכספי באמצעות קוד PIN אישי.",
+                11, Color.GRAY, false));
+        if (pinSecurity.isEnabled()) {
+            security.addView(actionButton("שינוי קוד PIN",Color.rgb(55,105,132),()->showPinSetupDialog()),
+                    params(-1,dp(45),0,dp(10),0,0));
+            security.addView(actionButton("ביטול נעילת PIN",Color.rgb(133,91,79),()->showDisablePinDialog()),
+                    params(-1,dp(45),0,dp(8),0,0));
+        } else {
+            security.addView(actionButton("הפעלת נעילה עם PIN",Color.rgb(25,119,121),()->showPinSetupDialog()),
+                    params(-1,dp(45),0,dp(10),0,0));
+        }
+        b.addView(security,params(-1,-2,0,0,0,12));
+
         LinearLayout categorySection=card();
         LinearLayout ch=row();ch.addView(text("קטגוריות",16,Color.rgb(44,65,76),true),new LinearLayout.LayoutParams(0,-2,1));
         ch.addView(actionButton("＋ הוספה",Color.rgb(24,119,121),()->showCategoryDialog(null)));
@@ -394,7 +656,7 @@ public class MainActivity extends Activity {
         backup.addView(actionButton("ייצוא תנועות ל־CSV",Color.rgb(55,105,132),()->csvIntent()),params(-1,dp(45),0,dp(8),0,0));
         backup.addView(actionButton("שחזור מגיבוי",Color.rgb(105,112,126),()->restoreIntent()),params(-1,dp(45),0,dp(8),0,0));
         b.addView(backup,params(-1,-2,0,0,0,12));
-        b.addView(infoCard("גרסה","ניהול תקציב 1.0.0",Color.rgb(49,91,110)),params(-1,-2,0,0,0,10));
+        b.addView(infoCard("גרסה","ניהול תקציב 1.1.0",Color.rgb(49,91,110)),params(-1,-2,0,0,0,10));
         addText(b,"הנתונים נשמרים מקומית בלבד. האפליקציה אינה דורשת הרשאת אינטרנט.",11,Color.rgb(115,128,136),false,0,10);
     }
 
@@ -482,7 +744,9 @@ public class MainActivity extends Activity {
 
     private LinearLayout card() {
         LinearLayout c=new LinearLayout(this);c.setOrientation(LinearLayout.VERTICAL);c.setPadding(dp(14),dp(13),dp(14),dp(13));
-        c.setBackground(rounded(Color.WHITE,15));return c;
+        c.setBackground(rounded(Color.WHITE,16));
+        c.setElevation(dp(2));
+        return c;
     }
     private GradientDrawable rounded(int color,int radius) {
         GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(dp(radius));d.setStroke(dp(1),Color.rgb(231,237,240));return d;
@@ -496,7 +760,7 @@ public class MainActivity extends Activity {
     private Spinner spinner(String[] values){Spinner s=new Spinner(this);ArrayAdapter<String>a=new ArrayAdapter<>(this,android.R.layout.simple_spinner_item,values);a.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);s.setAdapter(a);return s;}
     private Spinner spinner(Object[] values){Spinner s=new Spinner(this);ArrayAdapter<Object>a=new ArrayAdapter<>(this,android.R.layout.simple_spinner_item,values);a.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);s.setAdapter(a);return s;}
     private View actionButton(String label,int color,Runnable action){
-        TextView v=text(label,13,Color.WHITE,true);v.setGravity(Gravity.CENTER);v.setPadding(dp(10),dp(5),dp(10),dp(5));v.setBackground(rounded(color,11));v.setOnClickListener(w->action.run());return v;
+        TextView v=text(label,13,Color.WHITE,true);v.setGravity(Gravity.CENTER);v.setMinHeight(dp(42));v.setPadding(dp(14),dp(7),dp(14),dp(7));v.setBackground(rounded(color,13));v.setElevation(dp(1));v.setOnClickListener(w->action.run());return v;
     }
     private View emptyMessage(String msg){LinearLayout c=card();TextView t=text(msg,12,Color.GRAY,false);t.setGravity(Gravity.CENTER);t.setPadding(dp(8),dp(10),dp(8),dp(10));c.addView(t);return c;}
     private void addDivider(LinearLayout p){View v=new View(this);v.setBackgroundColor(Color.rgb(237,241,243));p.addView(v,params(-1,dp(1),0,dp(8),0,0));}
