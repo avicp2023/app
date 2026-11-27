@@ -44,11 +44,48 @@ jobs:
           path: ~/.android/debug.keystore
           key: budget-manager-debug-keystore-v1
 
+      - name: Ensure persistent debug signing key exists
+        shell: bash
+        run: |
+          mkdir -p "$HOME/.android"
+          if [ ! -f "$HOME/.android/debug.keystore" ]; then
+            keytool -genkeypair -v \
+              -keystore "$HOME/.android/debug.keystore" \
+              -storepass android \
+              -alias androiddebugkey \
+              -keypass android \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US"
+          fi
+          test -s "$HOME/.android/debug.keystore"
+
       - name: Build signed APK
         run: |
           gradle --no-daemon clean :app:assembleRelease
           mkdir -p dist
           cp app/build/outputs/apk/release/app-release.apk dist/nihul-taktziv-v1.1.0.apk
+
+      - name: Verify APK signature and compare with prior releases
+        shell: bash
+        run: |
+          APK="app/build/outputs/apk/release/app-release.apk"
+          SIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          NEW_CERT=$("$SIGNER" verify --print-certs "$APK" | awk -F': ' '/Signer #1 certificate SHA-256 digest/ {print $2}')
+          echo "New APK signing certificate: $NEW_CERT"
+          for VERSION in v1.0.0 v1.1.0; do
+            OLD_URL="https://github.com/avicp2023/app/releases/download/$VERSION/nihul-taktziv-$VERSION.apk"
+            OLD_APK="/tmp/$VERSION.apk"
+            if curl -fsSL "$OLD_URL" -o "$OLD_APK"; then
+              OLD_CERT=$("$SIGNER" verify --print-certs "$OLD_APK" | awk -F': ' '/Signer #1 certificate SHA-256 digest/ {print $2}')
+              if [ "$OLD_CERT" = "$NEW_CERT" ]; then
+                echo "$VERSION certificate matches: update signature is compatible."
+              else
+                echo "::warning::$VERSION uses a different signing certificate; Android may require uninstalling that version before installing this APK."
+              fi
+            else
+              echo "::warning::Could not download $VERSION APK to compare signing certificates."
+            fi
+          done
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
